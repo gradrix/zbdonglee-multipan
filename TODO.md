@@ -22,8 +22,12 @@
 - [ ] Port to 2025.12.x if a bisect needs it.
 - [ ] Find why SiSDK 2026.6.2 CPC UART builds stay silent on EFR32MG21 (TXPEN/RXPEN ruled out).
   Biggest driver change since 2025.6.3: DMADRV → `sl_dma_manager` and emlib USART → `sl_hal_usart`.
-  Next: a diagnostic build with asserts printed on the UART plus a register dump, and a bisect
-  with each SDK's own sample (2024.6.2 control, 2025.6.3).
+  Prepared: [tools/diag.c](tools/diag.c), a diagnostic add-on for the 2026.6.2 sample (build with
+  `DEBUG_EFM_USER` and `DEBUG_EFM` defined and `diag_report()`/`diag_tick()` called from `app_init`/
+  `app_process_action`): prints the reset cause at boot, `ASSERT file:line`, `HARDFAULT`, and every 2 s
+  for 60 s a snapshot of USART0, its GPIO route and all 8 LDMA channels as the CPC driver left them.
+  Capture with any serial reader at 460800 8N1. Then a bisect with each SDK's own sample
+  (2024.6.2 control, 2025.6.3). Results will land here.
 - [ ] Build for other EFR32MG21/MG24 multi-PAN sticks (Nerivec's v2024.6.2 manifests: SkyConnect,
   Yellow, ZB-GW04, SLZB-06M/07, MGM240P, …), untested.
 - [ ] Hardware-flow-control variant for sticks that wire RTS/CTS.
