@@ -1,0 +1,19 @@
+This repository's scripts and documentation are under the MIT License (LICENSE).
+
+patches/ modifies these Silicon Labs Simplicity SDK v2024.6.2 files, which are licensed under
+the zlib License (SPDX-License-Identifier: Zlib, Copyright Silicon Laboratories Inc.):
+  platform/service/cpc/inc/sli_cpc.h
+  platform/service/cpc/src/sl_cpc.c
+  protocol/openthread/platform-abstraction/ncp/ncp_cpc.cpp
+  protocol/openthread/platform-abstraction/ncp/ncp_cpc.hpp
+host/ modifies server_core/core/core.c of Silicon Labs cpc-daemon v4.8.0 (zlib License).
+As the zlib License requires, these are altered versions and are marked as such: every
+change carries a "cpcfix:" or "zbdonglee-multipan" comment. The patches are distributed under
+the zlib License.
+
+Firmware images published in Releases are compiled from the Silicon Labs Simplicity SDK v2024.6.2
+(with the patches above) using the project from Nerivec/silabs-firmware-builder v2024.6.2. They
+contain Silicon Labs components under their own licenses, including the Silicon Labs Master
+Software License Agreement (MSLA) for parts of the radio (RAIL) and Zigbee stacks, which allows
+their use with Silicon Labs devices. See https://www.silabs.com/about-us/legal/master-software-license-agreement
+and the license files in the Simplicity SDK.

@@ -1,0 +1,102 @@
+--- a/server_core/core/core.c
++++ b/server_core/core/core.c
+@@ -851,6 +851,73 @@
+           || ep->state == SLI_CPC_STATE_REMOTE_SHUTDOWN);
+ }
+ 
++// zbdonglee-multipan host patch: log the frames around a payload-checksum failure, and
++// rate-limit the per-reject warning (the secondary re-sends a bad frame every few ms), and exit
++// after DIAG_BAD_STREAK_EXIT bad frames in a row (~6 s) instead of waiting for the health check.
++#define DIAG_BAD_STREAK_EXIT 2000
++static unsigned int diag_bad_streak;
++static uint8_t diag_last_ok[SLI_CPC_HDLC_HEADER_RAW_SIZE + 64];
++static size_t diag_last_ok_size;
++static uint16_t diag_last_ok_len;
++
++static void diag_hex(char *out, size_t out_size, const uint8_t *buf, size_t len)
++{
++  size_t n = 0;
++
++  out[0] = '\0';
++  for (size_t i = 0; i < len && n + 3 <= out_size; i++) {
++    n += (size_t)snprintf(out + n, out_size - n, "%02x", buf[i]);
++  }
++}
++
++static void diag_good_frame(const frame_t *rx_frame, uint16_t payload_len)
++{
++  size_t n = (size_t)payload_len + SLI_CPC_HDLC_FCS_SIZE;
++
++  if (diag_bad_streak != 0) {
++    PRINT_INFO("diag: checksum streak ended after %u bad frames", diag_bad_streak);
++    diag_bad_streak = 0;
++  }
++  if (n > 64) {
++    n = 64;
++  }
++  memcpy(diag_last_ok, rx_frame->header, SLI_CPC_HDLC_HEADER_RAW_SIZE);
++  memcpy(diag_last_ok + SLI_CPC_HDLC_HEADER_RAW_SIZE, rx_frame->payload, n);
++  diag_last_ok_size = SLI_CPC_HDLC_HEADER_RAW_SIZE + n;
++  diag_last_ok_len = payload_len;
++}
++
++static void diag_bad_frame(const sl_cpc_endpoint_t *endpoint, const frame_t *rx_frame,
++                           uint16_t payload_len, uint16_t fcs)
++{
++  char hdr[2 * SLI_CPC_HDLC_HEADER_RAW_SIZE + 1];
++  char payload[2 * 320 + 1];
++  char last[2 * sizeof(diag_last_ok) + 1];
++  size_t n = (size_t)payload_len + SLI_CPC_HDLC_FCS_SIZE;
++
++  diag_bad_streak++;
++  if (diag_bad_streak >= DIAG_BAD_STREAK_EXIT) {
++    // The secondary resends a frame that cannot pass (about 3 ms each): Zigbee and Thread
++    // are stalled. Exit so the container supervisor restarts the stack and resets the RCP.
++    FATAL("payload checksum loop on ep %u (%u bad frames in a row)", endpoint->id, diag_bad_streak);
++  }
++  if (diag_bad_streak > 3 && diag_bad_streak % 1000 != 0) {
++    return;
++  }
++  if (n > 320) {
++    n = 320;
++  }
++  diag_hex(hdr, sizeof(hdr), rx_frame->header, SLI_CPC_HDLC_HEADER_RAW_SIZE);
++  diag_hex(payload, sizeof(payload), rx_frame->payload, n);
++  WARN("diag: bad payload #%u ep %u seq %u expected %u len %u fcs rx %04x calc %04x hdr %s payload %s",
++       diag_bad_streak, endpoint->id, hdlc_get_seq(hdlc_get_control(rx_frame->header)), endpoint->ack,
++       payload_len, fcs, sli_cpc_get_crc_sw(rx_frame->payload, payload_len), hdr, payload);
++  if (diag_bad_streak == 1) {
++    diag_hex(last, sizeof(last), diag_last_ok, diag_last_ok_size);
++    WARN("diag: last good frame len %u (hdr + first 64 bytes) %s", diag_last_ok_len, last);
++  }
++}
++
+ static void core_process_rx_i_frame(frame_t *rx_frame)
+ {
+   sl_cpc_endpoint_t* endpoint;
+@@ -881,11 +948,14 @@
+ 
+   // Validate payload checksum. In case it is invalid, NAK the packet.
+   if (!sli_cpc_validate_crc_sw(rx_frame->payload, rx_frame_payload_length, fcs)) {
++    diag_bad_frame(endpoint, rx_frame, rx_frame_payload_length, fcs);
+     transmit_reject(endpoint, address, endpoint->ack, HDLC_REJECT_CHECKSUM_MISMATCH);
+     TRACE_CORE_INVALID_PAYLOAD_CHECKSUM();
+     return;
+   }
+ 
++  diag_good_frame(rx_frame, rx_frame_payload_length);
++
+   uint8_t  control = hdlc_get_control(rx_frame->header);
+   uint8_t  seq     = hdlc_get_seq(control);
+ 
+@@ -1704,7 +1774,9 @@
+     switch (reason) {
+       case HDLC_REJECT_CHECKSUM_MISMATCH:
+         TRACE_ENDPOINT_TXD_REJECT_CHECKSUM_MISMATCH(endpoint);
+-        WARN("Host received a packet with an invalid checksum on ep %d", endpoint->id);
++        if (diag_bad_streak <= 3 || diag_bad_streak % 1000 == 0) {
++          WARN("Host received a packet with an invalid checksum on ep %d", endpoint->id);
++        }
+         break;
+       case HDLC_REJECT_SEQUENCE_MISMATCH:
+         TRACE_ENDPOINT_TXD_REJECT_SEQ_MISMATCH(endpoint);
