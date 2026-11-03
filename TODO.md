@@ -16,9 +16,14 @@
   likely have the same bug.
 
 ## Firmware
-- [ ] Port the patch to SiSDK 2025.12.x and 2026.6.x (the same code is there).
+- [x] Port the patch to SiSDK 2026.6.2: [patches-2026.6.2/](patches-2026.6.2/) (applies to the
+  SDK root as installed by `slt`, compiles; not tested on hardware, because 2026.6.2 CPC UART builds
+  are silent on this chip, see the next item).
+- [ ] Port to 2025.12.x if a bisect needs it.
 - [ ] Find why SiSDK 2026.6.2 CPC UART builds stay silent on EFR32MG21 (TXPEN/RXPEN ruled out).
-  Needs a debugger (SWD pads on the ZBDongle-E) or UART logging on a spare pin.
+  Biggest driver change since 2025.6.3: DMADRV → `sl_dma_manager` and emlib USART → `sl_hal_usart`.
+  Next: a diagnostic build with asserts printed on the UART plus a register dump, and a bisect
+  with each SDK's own sample (2024.6.2 control, 2025.6.3).
 - [ ] Build for other EFR32MG21/MG24 multi-PAN sticks (Nerivec's v2024.6.2 manifests: SkyConnect,
   Yellow, ZB-GW04, SLZB-06M/07, MGM240P, …), untested.
 - [ ] Hardware-flow-control variant for sticks that wire RTS/CTS.

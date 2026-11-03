@@ -35,7 +35,8 @@ host's checksum, with no retry limit. The full analysis is in
 The fix ([patches/](patches/)): `NcpCPC` tags each write and ignores completions for any other
 write (and no longer zeroes the buffer); CPC's resend timer no longer takes a frame it does not
 own off the queue; a frame is completed only once. The same CPC and `NcpCPC` code is still in
-SiSDK 2026.6.2, so newer SDKs probably need the same fix.
+SiSDK 2026.6.2; a port is in [patches-2026.6.2/](patches-2026.6.2/) (untested on hardware, see
+[TODO.md](TODO.md)).
 
 ## Download
 

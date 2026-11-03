@@ -1,0 +1,127 @@
+--- a/cpc/inc/sli_cpc.h
++++ b/cpc/inc/sli_cpc.h
+@@ -430,6 +430,7 @@
+   sl_cpc_reject_reason_t reason;                   ///< reason
+   void *arg;                                       ///< arg
+   bool on_write_complete_pending;                  ///< on write complete pending
++  bool write_completion_submitted;                 ///< cpcfix: completion already queued
+   sl_status_t write_status;                        ///< write status
+   sl_slist_node_t driver_node;                     ///< driver node
+   sl_slist_node_t core_node;                       ///< core node
+--- a/cpc/src/sl_cpc.c
++++ b/cpc/src/sl_cpc.c
+@@ -2188,6 +2188,13 @@
+ {
+   sl_cpc_endpoint_t *ep = buffer_handle->endpoint;
+ 
++  // cpcfix: complete a frame once; a second completion would run the user callback
++  // again and free the handle twice.
++  if (buffer_handle->write_completion_submitted) {
++    return;
++  }
++  buffer_handle->write_completion_submitted = true;
++
+   // When submitting for write completion, the buffer handle should not be referenced
+   SLI_CPC_ASSERT(buffer_handle->ref_count == 0);
+ 
+@@ -5026,7 +5033,17 @@
+ 
+   SL_CPC_JOURNAL_RECORD_INFO("Retransmit timer expired", buffer_handle->endpoint->id);
+   popped_buffer_handle = sli_cpc_pop_core_buffer_handle(&ep->re_transmit_queue);
+-  SLI_CPC_ASSERT(buffer_handle == popped_buffer_handle);
++  // cpcfix: a timer that fires late (its frame was acked, or is being resent after a
++  // reject) must not take the queue head away: moving a frame the driver still owns, or
++  // another frame, let one frame be completed twice and its buffer reused while resent.
++  if (popped_buffer_handle != buffer_handle
++      || (popped_buffer_handle != NULL && popped_buffer_handle->ref_count > 0)) {
++    if (popped_buffer_handle != NULL) {
++      sli_cpc_push_core_buffer_handle(&ep->re_transmit_queue, popped_buffer_handle);
++    }
++    MCU_EXIT_ATOMIC();
++    return;
++  }
+   sli_cpc_timer_stop_timer(&ep->re_transmit_timer);
+ #if defined(SLI_CPC_DEVICE_UNDER_TEST)
+   sli_cpc_on_retransmit_timer_expiration(buffer_handle);
+--- a/openthread/platform-abstraction/ncp/ncp_cpc.cpp
++++ b/openthread/platform-abstraction/ncp/ncp_cpc.cpp
+@@ -98,6 +98,7 @@
+     : NcpBase(aInstances, aCount)
+     , mIsReady(false)
+     , mIsWriting(false)
++    , mWriteToken(0)
+     , mCpcSendTask(*aInstances[0], SendToCPC)
+     , mCpcEndpointErrorTask(*aInstances[0], HandleEndpointError)
+     , mCpcOpenEndpointTask(*aInstances[0], HandleOpenEndpoint)
+@@ -109,6 +110,7 @@
+     : NcpBase(aInstance)
+     , mIsReady(false)
+     , mIsWriting(false)
++    , mWriteToken(0)
+     , mCpcSendTask(*aInstance, SendToCPC)
+     , mCpcEndpointErrorTask(*aInstance, HandleEndpointError)
+     , mCpcOpenEndpointTask(*aInstance, HandleOpenEndpoint)
+@@ -197,6 +199,9 @@
+         otPlatWakeHost();
+     }
+ 
++    // cpcfix: tag the write before claiming the buffer, so a completion for an earlier write
++    // (CPC can report one late, or twice) cannot release it while it is filled, sent or resent.
++    mWriteToken++;
+     mIsWriting = true;
+ 
+     // Concatenate multiple spinel buffers for efficiency over CPC.
+@@ -218,7 +223,8 @@
+         }
+     }
+ 
+-    status = sl_cpc_write(&mUserEp, mCpcTxBuffer, offset, 0, nullptr);
++    status = sl_cpc_write(&mUserEp, mCpcTxBuffer, offset, 0,
++                          reinterpret_cast<void *>(static_cast<uintptr_t>(mWriteToken)));
+     if (status != SL_STATUS_OK)
+     {
+         mIsWriting = false;
+@@ -240,15 +246,20 @@
+ {
+     OT_UNUSED_VARIABLE(endpoint_id);
+     OT_UNUSED_VARIABLE(buffer);
+-    OT_UNUSED_VARIABLE(arg);
+     OT_UNUSED_VARIABLE(status);
+ 
+-    static_cast<NcpCPC *>(GetNcpInstance())->HandleSendDone();
++    static_cast<NcpCPC *>(GetNcpInstance())->HandleSendDone(arg);
+ }
+ 
+-void NcpCPC::HandleSendDone(void)
++void NcpCPC::HandleSendDone(void *aArg)
+ {
+-    memset(mCpcTxBuffer, 0, sizeof(mCpcTxBuffer));
++    // cpcfix: only the completion of the write in flight frees the buffer. The buffer is
++    // no longer zeroed: a stray completion used to wipe a frame CPC was still resending,
++    // which the host then rejected for its checksum forever.
++    if (!mIsWriting || aArg != reinterpret_cast<void *>(static_cast<uintptr_t>(mWriteToken)))
++    {
++        return;
++    }
+     mIsWriting = false;
+ 
+     if (!mTxFrameBuffer.IsEmpty())
+--- a/openthread/platform-abstraction/ncp/ncp_cpc.hpp
++++ b/openthread/platform-abstraction/ncp/ncp_cpc.hpp
+@@ -96,7 +96,7 @@
+     void        SendToCPC(void);
+     static void SendToCPC(Tasklet &aTasklet);
+     static void HandleCPCSendDone(sl_cpc_user_endpoint_id_t endpoint_id, void *buffer, void *arg, sl_status_t status);
+-    void        HandleSendDone(void);
++    void        HandleSendDone(void *aArg);
+     static void HandleCPCReceive(sl_cpc_user_endpoint_id_t endpoint_id, void *arg);
+     static void HandleCPCEndpointError(uint8_t endpoint_id, void *arg);
+     static void HandleEndpointError(Tasklet &aTasklet);
+@@ -107,6 +107,7 @@
+     uint8_t                  mCpcTxBuffer[kCpcTxBufferSize];
+     bool                     mIsReady;
+     bool                     mIsWriting;
++    uint32_t                 mWriteToken; // cpcfix: identifies the write in flight (completion arg)
+     sl_cpc_endpoint_handle_t mUserEp;
+     Tasklet                  mCpcSendTask;
+     Tasklet                  mCpcEndpointErrorTask;
