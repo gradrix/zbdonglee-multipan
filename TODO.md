@@ -1,9 +1,12 @@
 # TODO
 
 ## Verdict
-- [ ] 24-hour soak on the reference setup (from 2026-11-03 08:00 UTC) with no
-  `diag: bad payload` line. One `RCP failure detected` in the first minute after a start is
-  normal. Then drop "experimental" and the pre-release flag.
+- [x] 24-hour soak on the reference setup (2026-11-03 08:00 → 2026-11-04 08:17 UTC): no
+  `diag: bad payload` line, no stack restart, Zigbee probe 2016/2016. Four isolated OpenThread
+  "radio tx timeout" events, each recovered in ~50 ms (not the checksum loop). Release flag:
+  switch `v2024.6.2-cpcfix.1` from pre-release to release on GitHub.
+- [ ] Find the cause of the rare OpenThread "radio tx timeout" (4 in 24 h, self-recovering);
+  compare with the 2026.6.x RCP.
 - [ ] Longer run (7 days): compare Zigbee reliability with plain EmberZNet NCP firmware.
 
 ## Upstream

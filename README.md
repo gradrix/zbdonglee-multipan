@@ -6,10 +6,11 @@ Zigbee and Thread on one radio, through Silicon Labs' CPC protocol. It is
 (the last published one for this dongle) rebuilt with a fix for a bug that stalls the radio link
 about once an hour.
 
-> **Status: experimental.** Running on one dongle since 2026-11-03 (Zigbee2MQTT on zigbeed with
-> 28 devices, an OpenThread border router, a Matter-over-Thread sensor). Before the fix that setup
-> stalled every ~70 minutes. The 24-hour soak result is pending; see [TODO.md](TODO.md).
-> Releases stay marked as pre-release until it is in.
+> **Status: soak test passed (2026-11-04).** Running on one dongle since 2026-11-03 (Zigbee2MQTT on
+> zigbeed with 28 devices, an OpenThread border router, Matter-over-Thread devices). Before the fix
+> that setup stalled every ~70 minutes; over the 24-hour soak it logged no bad frame, needed no
+> stack restart and answered every Zigbee probe (2016/2016). Tested on one dongle only; see
+> [TODO.md](TODO.md) for the longer comparison and other sticks.
 
 ## The bug it fixes
 
