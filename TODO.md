@@ -3,8 +3,8 @@
 ## Verdict
 - [x] 24-hour soak on the reference setup (2026-11-03 08:00 → 2026-11-04 08:17 UTC): no
   `diag: bad payload` line, no stack restart, Zigbee probe 2016/2016. Four isolated OpenThread
-  "radio tx timeout" events, each recovered in ~50 ms (not the checksum loop). Release flag:
-  switch `v2024.6.2-cpcfix.1` from pre-release to release on GitHub.
+  "radio tx timeout" events, each recovered in ~50 ms (not the checksum loop). Released as a
+  full (latest) release on GitHub 2026-11-04: `v2024.6.2-cpcfix.1`.
 - [ ] Find the cause of the rare OpenThread "radio tx timeout" (4 in 24 h, self-recovering);
   compare with the 2026.6.x RCP.
 - [ ] Longer run (7 days): compare Zigbee reliability with plain EmberZNet NCP firmware.
