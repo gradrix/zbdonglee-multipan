@@ -34,7 +34,8 @@
 - [ ] Build for other EFR32MG21/MG24 multi-PAN sticks (Nerivec's v2024.6.2 manifests: SkyConnect,
   Yellow, ZB-GW04, SLZB-06M/07, MGM240P, …), untested.
 - [ ] Hardware-flow-control variant for sticks that wire RTS/CTS.
-- [ ] Optional: report how often the guards fire (a CPC debug counter readable from the host).
+- [x] Report how often the guards fire: done in the 2026.6.2 port (OpenThread log stream, see
+  README). Not in the 2024.6.2 build yet (that needs another flash of a working dongle).
 
 ## Project
 - [ ] Release automation: check the first tag build in GitHub Actions; attach build logs.

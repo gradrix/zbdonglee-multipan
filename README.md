@@ -37,7 +37,10 @@ The fix ([patches/](patches/)): `NcpCPC` tags each write and ignores completions
 write (and no longer zeroes the buffer); CPC's resend timer no longer takes a frame it does not
 own off the queue; a frame is completed only once. The same CPC and `NcpCPC` code is still in
 SiSDK 2026.6.2; a port is in [patches-2026.6.2/](patches-2026.6.2/) (untested on hardware, see
-[TODO.md](TODO.md)).
+[TODO.md](TODO.md)). The port also counts how often each guard fires and reports changes as an
+OpenThread warning, which otbr-agent logs as `RCP => cpcfix: stale_completions=… double_completions=…
+timer_skips=…`; build it with `OPENTHREAD_CONFIG_LOG_OUTPUT_APP` and `OPENTHREAD_CONFIG_LOG_LEVEL
+OT_LOG_LEVEL_WARN` (the sample ships with log output off), otherwise the counters stay silent.
 
 ## Download
 

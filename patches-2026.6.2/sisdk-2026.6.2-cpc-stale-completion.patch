@@ -10,13 +10,22 @@
    sl_slist_node_t core_node;                       ///< core node
 --- a/cpc/src/sl_cpc.c
 +++ b/cpc/src/sl_cpc.c
-@@ -2188,6 +2188,13 @@
+@@ -2184,10 +2184,22 @@
+  * be executed later to inform the endpoint user via the appropriate registered
+  * callback.
+  ******************************************************************************/
++// cpcfix: how often each guard fired (read and logged by NcpCPC, ncp_cpc.cpp).
++volatile uint32_t sli_cpcfix_double_completions;
++volatile uint32_t sli_cpcfix_timer_skips;
++
+ static void submit_write_completion(sl_cpc_buffer_handle_t *buffer_handle, sl_status_t write_status)
  {
    sl_cpc_endpoint_t *ep = buffer_handle->endpoint;
  
 +  // cpcfix: complete a frame once; a second completion would run the user callback
 +  // again and free the handle twice.
 +  if (buffer_handle->write_completion_submitted) {
++    sli_cpcfix_double_completions++;
 +    return;
 +  }
 +  buffer_handle->write_completion_submitted = true;
@@ -24,7 +33,7 @@
    // When submitting for write completion, the buffer handle should not be referenced
    SLI_CPC_ASSERT(buffer_handle->ref_count == 0);
  
-@@ -5026,7 +5033,17 @@
+@@ -5026,7 +5038,18 @@
  
    SL_CPC_JOURNAL_RECORD_INFO("Retransmit timer expired", buffer_handle->endpoint->id);
    popped_buffer_handle = sli_cpc_pop_core_buffer_handle(&ep->re_transmit_queue);
@@ -34,6 +43,7 @@
 +  // another frame, let one frame be completed twice and its buffer reused while resent.
 +  if (popped_buffer_handle != buffer_handle
 +      || (popped_buffer_handle != NULL && popped_buffer_handle->ref_count > 0)) {
++    sli_cpcfix_timer_skips++;
 +    if (popped_buffer_handle != NULL) {
 +      sli_cpc_push_core_buffer_handle(&ep->re_transmit_queue, popped_buffer_handle);
 +    }
@@ -45,23 +55,45 @@
    sli_cpc_on_retransmit_timer_expiration(buffer_handle);
 --- a/openthread/platform-abstraction/ncp/ncp_cpc.cpp
 +++ b/openthread/platform-abstraction/ncp/ncp_cpc.cpp
-@@ -98,6 +98,7 @@
+@@ -53,6 +53,10 @@
+ namespace ot {
+ namespace Ncp {
+ 
++// cpcfix: guard counters in sl_cpc.c.
++extern "C" volatile uint32_t sli_cpcfix_double_completions;
++extern "C" volatile uint32_t sli_cpcfix_timer_skips;
++
+ static OT_DEFINE_ALIGNED_VAR(sNcpRaw, sizeof(NcpCPC), uint64_t);
+ 
+ #if OPENTHREAD_CONFIG_MULTIPAN_RCP_ENABLE && OPENTHREAD_RADIO
+@@ -98,6 +102,9 @@
      : NcpBase(aInstances, aCount)
      , mIsReady(false)
      , mIsWriting(false)
 +    , mWriteToken(0)
++    , mCpcfixStaleCompletions(0)
++    , mCpcfixReported{0, 0, 0}
      , mCpcSendTask(*aInstances[0], SendToCPC)
      , mCpcEndpointErrorTask(*aInstances[0], HandleEndpointError)
      , mCpcOpenEndpointTask(*aInstances[0], HandleOpenEndpoint)
-@@ -109,6 +110,7 @@
+@@ -109,6 +116,9 @@
      : NcpBase(aInstance)
      , mIsReady(false)
      , mIsWriting(false)
 +    , mWriteToken(0)
++    , mCpcfixStaleCompletions(0)
++    , mCpcfixReported{0, 0, 0}
      , mCpcSendTask(*aInstance, SendToCPC)
      , mCpcEndpointErrorTask(*aInstance, HandleEndpointError)
      , mCpcOpenEndpointTask(*aInstance, HandleOpenEndpoint)
-@@ -197,6 +199,9 @@
+@@ -192,11 +202,16 @@
+ 
+     VerifyOrExit(mIsReady && !mIsWriting && !txFrameBuffer.IsEmpty());
+ 
++    ReportCpcfixCounters();
++
+     if (super_t::ShouldWakeHost())
+     {
          otPlatWakeHost();
      }
  
@@ -71,7 +103,7 @@
      mIsWriting = true;
  
      // Concatenate multiple spinel buffers for efficiency over CPC.
-@@ -218,7 +223,8 @@
+@@ -218,7 +233,8 @@
          }
      }
  
@@ -81,7 +113,7 @@
      if (status != SL_STATUS_OK)
      {
          mIsWriting = false;
-@@ -240,15 +246,20 @@
+@@ -240,15 +256,21 @@
  {
      OT_UNUSED_VARIABLE(endpoint_id);
      OT_UNUSED_VARIABLE(buffer);
@@ -101,27 +133,59 @@
 +    // which the host then rejected for its checksum forever.
 +    if (!mIsWriting || aArg != reinterpret_cast<void *>(static_cast<uintptr_t>(mWriteToken)))
 +    {
++        mCpcfixStaleCompletions++;
 +        return;
 +    }
      mIsWriting = false;
  
      if (!mTxFrameBuffer.IsEmpty())
+@@ -265,6 +287,27 @@
+     }
+ }
+ 
++// cpcfix: one warning per change of the guard counters, so the host sees whether the guards fire
++// (otbr-agent logs it as "RCP => cpcfix: ..."; needs OPENTHREAD_CONFIG_LOG_OUTPUT_APP). Runs
++// before a write claims the buffer, so the log frame goes out with the next write.
++void NcpCPC::ReportCpcfixCounters(void)
++{
++    uint32_t doubleCompletions = sli_cpcfix_double_completions;
++    uint32_t timerSkips        = sli_cpcfix_timer_skips;
++
++    VerifyOrExit(mCpcfixStaleCompletions != mCpcfixReported[0] || doubleCompletions != mCpcfixReported[1] ||
++                 timerSkips != mCpcfixReported[2]);
++    mCpcfixReported[0] = mCpcfixStaleCompletions;
++    mCpcfixReported[1] = doubleCompletions;
++    mCpcfixReported[2] = timerSkips;
++    otLogWarnPlat("cpcfix: stale_completions=%lu double_completions=%lu timer_skips=%lu",
++                  static_cast<unsigned long>(mCpcfixStaleCompletions), static_cast<unsigned long>(doubleCompletions),
++                  static_cast<unsigned long>(timerSkips));
++
++exit:
++    return;
++}
++
+ void NcpCPC::HandleCPCReceive(sl_cpc_user_endpoint_id_t endpoint_id, void *arg)
+ {
+     OT_UNUSED_VARIABLE(endpoint_id);
 --- a/openthread/platform-abstraction/ncp/ncp_cpc.hpp
 +++ b/openthread/platform-abstraction/ncp/ncp_cpc.hpp
-@@ -96,7 +96,7 @@
+@@ -96,7 +96,8 @@
      void        SendToCPC(void);
      static void SendToCPC(Tasklet &aTasklet);
      static void HandleCPCSendDone(sl_cpc_user_endpoint_id_t endpoint_id, void *buffer, void *arg, sl_status_t status);
 -    void        HandleSendDone(void);
 +    void        HandleSendDone(void *aArg);
++    void        ReportCpcfixCounters(void);
      static void HandleCPCReceive(sl_cpc_user_endpoint_id_t endpoint_id, void *arg);
      static void HandleCPCEndpointError(uint8_t endpoint_id, void *arg);
      static void HandleEndpointError(Tasklet &aTasklet);
-@@ -107,6 +107,7 @@
+@@ -107,6 +108,9 @@
      uint8_t                  mCpcTxBuffer[kCpcTxBufferSize];
      bool                     mIsReady;
      bool                     mIsWriting;
 +    uint32_t                 mWriteToken; // cpcfix: identifies the write in flight (completion arg)
++    uint32_t                 mCpcfixStaleCompletions; // cpcfix: completions ignored by HandleSendDone
++    uint32_t                 mCpcfixReported[3];      // cpcfix: counters as last logged
      sl_cpc_endpoint_handle_t mUserEp;
      Tasklet                  mCpcSendTask;
      Tasklet                  mCpcEndpointErrorTask;
