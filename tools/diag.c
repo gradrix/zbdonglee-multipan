@@ -127,13 +127,37 @@ static void diag_tx_ready(void)
   USART0->CMD = USART_CMD_TXEN;
 }
 
+// The CPC driver enables the USART0 TXC interrupt; our polled characters would set TXC with no
+// CPC frame submitted and trip SLI_CPC_ASSERT(buffer_handle != NULL) in the driver's TX ISR
+// (seen in test window 1, 2026-11-05). Mask TXC while we print, wait for our last character,
+// clear the flag, restore the mask. Only safe while no CPC frame is in flight, which holds in
+// fwtest-diag.sh: no host is connected, so the secondary never sends.
+static uint32_t diag_quiet_begin(void)
+{
+  uint32_t txc_enabled = USART0->IEN & USART_IEN_TXC;
+  USART0->IEN_CLR = USART_IEN_TXC;
+  return txc_enabled;
+}
+
+static void diag_quiet_end(uint32_t txc_enabled)
+{
+  for (uint32_t i = 0; i < 20000u && !(USART0->STATUS & USART_STATUS_TXC); i++) {
+  }
+  USART0->IF_CLR = USART_IF_TXC;
+  if (txc_enabled) {
+    USART0->IEN_SET = USART_IEN_TXC;
+  }
+}
+
 static void report(uint32_t ms)
 {
   uint32_t now[48];
   int n = read_regs(now);
+  uint32_t quiet = diag_quiet_begin();
 
   diag_tx_ready();
   if (!diag_putc('\n')) {
+    diag_quiet_end(quiet);
     return;  // TX dead: give up this report instead of polling 48 registers' worth of characters
   }
   diag_puts("\r\nDIAG ms=");
@@ -145,6 +169,7 @@ static void report(uint32_t ms)
     print_regs("S", snap, n);
   }
   print_regs("N", now, n);
+  diag_quiet_end(quiet);
 }
 
 static void on_timer(sl_sleeptimer_timer_handle_t *handle, void *data)
@@ -161,7 +186,7 @@ static void on_timer(sl_sleeptimer_timer_handle_t *handle, void *data)
 void app_init_early(void)
 {
   stage = 1;
-  diag_tx_ready();
+  diag_tx_ready();  // before CPC init: TXC is not enabled yet, no masking needed
   // Repeated BOOT lines without DIAG = a reset loop (OpenThread's fault handlers reset).
   diag_puts("\r\nBOOT rstcause=");
   diag_hex(EMU->RSTCAUSE);

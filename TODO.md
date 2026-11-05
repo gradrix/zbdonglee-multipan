@@ -31,6 +31,10 @@
   for 60 s a snapshot of USART0, its GPIO route and all 8 LDMA channels as the CPC driver left them.
   Capture with any serial reader at 460800 8N1. Then a bisect with each SDK's own sample
   (2024.6.2 control, 2025.6.3). Results will land here.
+  First run (2026-11-05, no host connected): the main loop starts, then one repeating
+  `ASSERT sl_cpc_drv_uart.c:1051` (`buffer_handle != NULL` in the TX-complete ISR). That one is
+  caused by the add-on itself: the driver enables the USART TXC interrupt, and the add-on's polled
+  characters set TXC with no CPC frame queued. diag.c now masks TXC while it prints; rerun pending.
 - [ ] Build for other EFR32MG21/MG24 multi-PAN sticks (Nerivec's v2024.6.2 manifests: SkyConnect,
   Yellow, ZB-GW04, SLZB-06M/07, MGM240P, …), untested.
 - [ ] Hardware-flow-control variant for sticks that wire RTS/CTS.
