@@ -39,8 +39,11 @@
   **The build answered the host**: universal-silabs-flasher detected CPC 4.9.2 over the UART. That
   build used the same CPC queue sizes (10/10/15/15) and HFXO CTUNE (128) as the working v2024.6.2
   manifest; the earlier silent builds used the SDK defaults and CTUNE 140. So the silence was most
-  likely a build-settings effect, not a driver bug. Next: the same build without the add-on (the
-  candidate) on hardware; if it answers, this item closes and the 2026.6.2 patch gets tested.
+  likely a build-settings effect, not a driver bug. Third run (2026-11-07): the same build without the
+  add-on but with OpenThread log output to the host on (`OPENTHREAD_CONFIG_LOG_OUTPUT_APP`, WARN) was
+  silent again. Next: the same build with log output off and no add-on. If it answers, the log
+  output is what silences the RCP; if not, something in the add-on (early USART setup, or
+  `DEBUG_EFM`) makes the build work.
 - [ ] Build for other EFR32MG21/MG24 multi-PAN sticks (Nerivec's v2024.6.2 manifests: SkyConnect,
   Yellow, ZB-GW04, SLZB-06M/07, MGM240P, …), untested.
 - [ ] Hardware-flow-control variant for sticks that wire RTS/CTS.
