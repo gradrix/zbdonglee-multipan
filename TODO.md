@@ -41,9 +41,11 @@
   manifest; the earlier silent builds used the SDK defaults and CTUNE 140. So the silence was most
   likely a build-settings effect, not a driver bug. Third run (2026-11-07): the same build without the
   add-on but with OpenThread log output to the host on (`OPENTHREAD_CONFIG_LOG_OUTPUT_APP`, WARN) was
-  silent again. Next: the same build with log output off and no add-on. If it answers, the log
-  output is what silences the RCP; if not, something in the add-on (early USART setup, or
-  `DEBUG_EFM`) makes the build work.
+  silent again. Fourth run (2026-11-08): log output off, no add-on: silent too, so the log output is
+  not the cause; something the add-on brings makes the build work. Next, one per night: the build with
+  only `DEBUG_EFM`/`DEBUG_EFM_USER` (bare `assertEFM`), then with only the add-on's early USART0/PB1
+  setup in `app_init_early`. One silent-failure path to check: `uart_drv_init` returns
+  `SL_STATUS_ALLOCATION_FAILED` without a trace when `sli_cpc_get_receive_queue_item` fails.
 - [ ] Build for other EFR32MG21/MG24 multi-PAN sticks (Nerivec's v2024.6.2 manifests: SkyConnect,
   Yellow, ZB-GW04, SLZB-06M/07, MGM240P, …), untested.
 - [ ] Hardware-flow-control variant for sticks that wire RTS/CTS.
