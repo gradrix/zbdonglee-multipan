@@ -52,7 +52,8 @@
   layout equals a silent build's, so the cause is still open (ordering/timing in the generated assert
   code?). Candidate for the port: these defines plus an `assertEFM` that resets the chip
   (`NVIC_SystemReset`) so a failed assert reboots the RCP instead of hanging it; next a test flash of
-  that, then a live soak.
+  that, then a live soak. Sixth run (2026-11-10): that build (defines + reset-on-assert `assertEFM`)
+  answers too (CPC 4.9.2, RCP 3.1.2.0); next it goes live on the reference setup for a 24 h soak.
 - [ ] Build for other EFR32MG21/MG24 multi-PAN sticks (Nerivec's v2024.6.2 manifests: SkyConnect,
   Yellow, ZB-GW04, SLZB-06M/07, MGM240P, …), untested.
 - [ ] Hardware-flow-control variant for sticks that wire RTS/CTS.
