@@ -9,7 +9,7 @@
   `diag: bad payload`, no stack restart, no failed-assert reset (cpcd connected once, at the flash), no
   OpenThread "radio tx timeout" (the 2024.6.2 build: ~5 a day), Zigbee probe 99.9 % (without one wall
   switch that loses power: 1717/1718), mean probe latency 208 ms (2024.6.2 build: 204 ms), Thread role
-  steady. Tagged `v2026.6.2-cpcfix.1` 2026-11-12 (CI pre-release; full release by hand).
+  steady. Released as `v2026.6.2-cpcfix.1` 2026-11-12 (full, latest release).
 - [ ] Find the cause of the rare OpenThread "radio tx timeout" (4 in 24 h, self-recovering) in the
   2024.6.2 build. The 2026.6.2 build had none in its 24-hour soak, so this may be fixed upstream; watch it.
 - [ ] Longer run (7 days): compare Zigbee reliability with plain EmberZNet NCP firmware.
