@@ -13,20 +13,33 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - sdk: "2024.6.2"
+            script: ./build.sh
+          - sdk: "2026.6.2"
+            script: ./build-2026.6.2.sh
+    env:
+      # A tag v<sdk>-cpcfix.N builds and publishes only the firmware for that SDK.
+      WANTED: ${{ !startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref_name, format('v{0}-', matrix.sdk)) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Build
-        run: ./build.sh
+        if: env.WANTED == 'true'
+        run: ${{ matrix.script }}
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        if: env.WANTED == 'true'
         with:
-          name: firmware
+          name: firmware-${{ matrix.sdk }}
           path: dist/
 
       # Tags publish a pre-release; mark it as a full release by hand once it has been soak-tested.
       - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: env.WANTED == 'true' && startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

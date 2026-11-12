@@ -5,8 +5,13 @@
   `diag: bad payload` line, no stack restart, Zigbee probe 2016/2016. Four isolated OpenThread
   "radio tx timeout" events, each recovered in ~50 ms (not the checksum loop). Released as a
   full (latest) release on GitHub 2026-11-04: `v2024.6.2-cpcfix.1`.
-- [ ] Find the cause of the rare OpenThread "radio tx timeout" (4 in 24 h, self-recovering);
-  compare with the 2026.6.x RCP.
+- [x] SiSDK 2026.6.2 build, 24-hour soak on the same setup (2026-11-11 01:56 → 2026-11-12 01:47 UTC): no
+  `diag: bad payload`, no stack restart, no failed-assert reset (cpcd connected once, at the flash), no
+  OpenThread "radio tx timeout" (the 2024.6.2 build: ~5 a day), Zigbee probe 99.9 % (without one wall
+  switch that loses power: 1717/1718), mean probe latency 208 ms (2024.6.2 build: 204 ms), Thread role
+  steady. Tagged `v2026.6.2-cpcfix.1` 2026-11-12 (CI pre-release; full release by hand).
+- [ ] Find the cause of the rare OpenThread "radio tx timeout" (4 in 24 h, self-recovering) in the
+  2024.6.2 build. The 2026.6.2 build had none in its 24-hour soak, so this may be fixed upstream; watch it.
 - [ ] Longer run (7 days): compare Zigbee reliability with plain EmberZNet NCP firmware.
 
 ## Upstream
@@ -20,10 +25,10 @@
 
 ## Firmware
 - [x] Port the patch to SiSDK 2026.6.2: [patches-2026.6.2/](patches-2026.6.2/) (applies to the
-  SDK root as installed by `slt`, compiles; not tested on hardware, because 2026.6.2 CPC UART builds
-  are silent on this chip, see the next item).
+  SDK root as installed by `slt`). Tested on hardware in the 2026.6.2 build (`build-2026.6.2.sh`).
+  That build needs `DEBUG_EFM`, see the next item.
 - [ ] Port to 2025.12.x if a bisect needs it.
-- [ ] Find why SiSDK 2026.6.2 CPC UART builds stay silent on EFR32MG21 (TXPEN/RXPEN ruled out).
+- [ ] Find why SiSDK 2026.6.2 CPC UART builds stay silent on EFR32MG21 without `DEBUG_EFM` (TXPEN/RXPEN ruled out).
   Biggest driver change since 2025.6.3: DMADRV → `sl_dma_manager` and emlib USART → `sl_hal_usart`.
   Prepared: [tools/diag.c](tools/diag.c), a diagnostic add-on for the 2026.6.2 sample (build with
   `DEBUG_EFM_USER` and `DEBUG_EFM` defined and `diag_report()`/`diag_tick()` called from `app_init`/
@@ -53,7 +58,12 @@
   code?). Candidate for the port: these defines plus an `assertEFM` that resets the chip
   (`NVIC_SystemReset`) so a failed assert reboots the RCP instead of hanging it; next a test flash of
   that, then a live soak. Sixth run (2026-11-10): that build (defines + reset-on-assert `assertEFM`)
-  answers too (CPC 4.9.2, RCP 3.1.2.0); next it goes live on the reference setup for a 24 h soak.
+  answers too (CPC 4.9.2, RCP 3.1.2.0). It went live on the reference setup 2026-11-11 and passed the
+  24-hour soak (Verdict), so it is the 2026.6.2 release. Next, offline before any flash: a
+  function-by-function disassembly diff of a silent build and an answering one (same flags apart from
+  the defines), then the memory manager's `DEBUG_EFM` paths and the silent `ALLOCATION_FAILED` return in
+  `uart_drv_init`; a test flash only once that names a specific candidate. Goal: a targeted patch
+  instead of the defines.
 - [ ] Build for other EFR32MG21/MG24 multi-PAN sticks (Nerivec's v2024.6.2 manifests: SkyConnect,
   Yellow, ZB-GW04, SLZB-06M/07, MGM240P, …), untested.
 - [ ] Hardware-flow-control variant for sticks that wire RTS/CTS.

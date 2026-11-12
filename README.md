@@ -4,13 +4,18 @@ Multi-PAN RCP firmware for the **SONOFF Zigbee 3.0 USB Dongle Plus V2 (ZBDongle-
 Zigbee and Thread on one radio, through Silicon Labs' CPC protocol. It is
 [Nerivec's v2024.6.2 multi-PAN build](https://github.com/Nerivec/silabs-firmware-builder/releases/tag/v2024.6.2)
 (the last published one for this dongle) rebuilt with a fix for a bug that stalls the radio link
-about once an hour.
+about once an hour, and a build of Silicon Labs' SiSDK 2026.6.2 multi-PAN RCP sample with the same fix
+(see [SiSDK 2026.6.2 build](#sisdk-202662-build)).
 
 > **Status: soak test passed (2026-11-04).** Running on one dongle since 2026-11-03 (Zigbee2MQTT on
 > zigbeed with 28 devices, an OpenThread border router, Matter-over-Thread devices). Before the fix
 > that setup stalled every ~70 minutes; over the 24-hour soak it logged no bad frame, needed no
 > stack restart and answered every Zigbee probe (2016/2016). Tested on one dongle only; see
 > [TODO.md](TODO.md) for the longer comparison and other sticks.
+>
+> **SiSDK 2026.6.2 build: soak test passed (2026-11-12)** on the same dongle and host, live since
+> 2026-11-11: no bad frame, no stack restart, no radio tx timeout in 24 hours (the 2024.6.2 build logs
+> about five a day), 99.9 % of Zigbee probes answered, Thread devices attached throughout.
 
 ## The bug it fixes
 
@@ -36,11 +41,33 @@ host's checksum, with no retry limit. The full analysis is in
 The fix ([patches/](patches/)): `NcpCPC` tags each write and ignores completions for any other
 write (and no longer zeroes the buffer); CPC's resend timer no longer takes a frame it does not
 own off the queue; a frame is completed only once. The same CPC and `NcpCPC` code is still in
-SiSDK 2026.6.2; a port is in [patches-2026.6.2/](patches-2026.6.2/) (untested on hardware, see
-[TODO.md](TODO.md)). The port also counts how often each guard fires and reports changes as an
+SiSDK 2026.6.2; the port in [patches-2026.6.2/](patches-2026.6.2/) is in the 2026.6.2 build. The port also counts how often each guard fires and reports changes as an
 OpenThread warning, which otbr-agent logs as `RCP => cpcfix: stale_completions=… double_completions=…
-timer_skips=…`; build it with `OPENTHREAD_CONFIG_LOG_OUTPUT_APP` and `OPENTHREAD_CONFIG_LOG_LEVEL
-OT_LOG_LEVEL_WARN` (the sample ships with log output off), otherwise the counters stay silent.
+timer_skips=…`; this needs `OPENTHREAD_CONFIG_LOG_OUTPUT_APP` and `OPENTHREAD_CONFIG_LOG_LEVEL
+OT_LOG_LEVEL_WARN`. The release build keeps the sample's default (log output off), so the counters stay
+silent there; log output on together with `DEBUG_EFM` (next section) has not been tested.
+
+## SiSDK 2026.6.2 build
+
+Silicon Labs' own multi-PAN RCP sample from SiSDK 2026.6.2
+(`openthread_app/ot-ncp/cpc/rcp-uart-802154`, "OpenThread Zigbee CMP - RCP UART"), built with
+[Nerivec's builder](https://github.com/Nerivec/silabs-firmware-builder) (branch `sisdk-2026.6.x`, pinned
+commit) and the stick settings from the v2024.6.2 manifest
+([firmware-2026.6.2/](firmware-2026.6.2/)), plus:
+
+- the CPC fix ported to 2026.6.2 ([patches-2026.6.2/](patches-2026.6.2/));
+- `DEBUG_EFM` and `DEBUG_EFM_USER` defined. **Without them every 2026.6.2 CPC UART build stayed
+  silent on this chip** (no byte on the UART at any baud rate, in every test flash); with them it
+  answers. The two defines turn on the SDK's asserts and nothing else in the compiler flags; why that
+  matters is still open (see [TODO.md](TODO.md));
+- [firmware-2026.6.2/efmreset.c](firmware-2026.6.2/efmreset.c): the `assertEFM()` that
+  `DEBUG_EFM_USER` asks for. A failed assert resets the chip, so cpcd sees a secondary reset and
+  reconnects, instead of the chip hanging with interrupts off.
+
+No BLE (the sample has none) and no CPC security: run cpcd with `disable_encryption: true`. Tested on
+one dongle with the SiSDK 2026.6.2 host stack below; 24-hour soak passed 2026-11-12 (no bad frame, no
+stack restart, no radio tx timeout, mean Zigbee probe latency the same as with the 2024.6.2 build), so
+the asserts cost nothing measurable there.
 
 ## Download
 
@@ -49,9 +76,11 @@ GitHub Actions running `./build.sh` on the tagged commit.
 
 | File | What |
 |---|---|
-| `sonoff_zbdonglee_rcp-uart-802154-blehci-sw_460800_2024.6.2-cpcfix.N.gbl` | multi-PAN RCP (802.15.4 + BLE HCI over CPC), 460800 baud, no hardware flow control |
+| `sonoff_zbdonglee_rcp-uart-802154-blehci-sw_460800_2024.6.2-cpcfix.N.gbl` | multi-PAN RCP (802.15.4 + BLE HCI over CPC), 460800 baud, no hardware flow control; SiSDK 2024.6.2, CPC protocol v5 (secondary 4.5.0), OpenThread RCP 2.5.1. Releases `v2024.6.2-cpcfix.N` |
+| `sonoff_zbdonglee_rcp-uart-802154_460800_2026.6.2-cpcfix.N.gbl` | multi-PAN RCP (802.15.4 over CPC, no BLE), 460800 baud, no hardware flow control; SiSDK 2026.6.2, CPC secondary 4.9.2, OpenThread RCP 3.1.2.0. Releases `v2026.6.2-cpcfix.N` |
 
-Versions inside: SiSDK 2024.6.2, CPC protocol v5 (secondary 4.5.0), OpenThread RCP 2.5.1.
+Prefer the 2026.6.2 build with a SiSDK 2026.6.2 host stack (same release on both sides, and no radio tx
+timeouts in its soak); the 2024.6.2 build if you need BLE.
 
 ## Flashing
 
@@ -103,16 +132,21 @@ found.
 
 ## Building
 
-Needs Docker on an x86_64 machine; everything else (slc, Commander, GCC 12.2.rel1, SiSDK 2024.6.2)
-is downloaded inside the image and checked against pinned SHA-256 sums.
+Needs Docker on an x86_64 machine; everything else is downloaded inside the image. For 2024.6.2
+(slc, Commander, GCC 12.2.rel1, SiSDK 2024.6.2) the downloads are checked against pinned SHA-256 sums;
+for 2026.6.2 the image comes from the builder's own Dockerfile at the pinned commit (slt, GCC 14.2.1).
 
 ```bash
-./build.sh            # dist/…-cpcfix.N.gbl + dist/SHA256SUMS
-./build.sh --stock    # the same build without patches
+./build.sh                    # 2024.6.2: dist/…2024.6.2-cpcfix.N.gbl + dist/SHA256SUMS
+./build.sh --stock            # the same build without patches
+./build-2026.6.2.sh           # 2026.6.2: dist/…2026.6.2-cpcfix.N.gbl + dist/SHA256SUMS
+./build-2026.6.2.sh --stock   # no CPC fix, no DEBUG_EFM (expect it to stay silent)
 ```
 
-The project, manifest and build script come from Nerivec's builder at tag v2024.6.2 (pinned
-commit). A stock build matches Nerivec's published file except for build stamps (14–16 bytes).
+The 2024.6.2 project, manifest and build script come from Nerivec's builder at tag v2024.6.2 (pinned
+commit). A stock build matches Nerivec's published file except for build stamps (14–16 bytes). The
+2026.6.2 release is built from the same project inputs as the soak-tested file; the two differ only in
+embedded name and path strings (28 bytes).
 
 ## Credits
 

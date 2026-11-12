@@ -1,0 +1,57 @@
+# Multi-PAN RCP (Zigbee + OpenThread over CPC) for the SONOFF ZBDongle-E, SiSDK 2026.6.2, built
+# with Nerivec/silabs-firmware-builder (see build-2026.6.2.sh). Pins and RSSI offset are the
+# builder's own ZBDongle-E values; the CPC UART, queue and crystal settings follow the v2024.6.2
+# multi-PAN build for this stick (460800 baud, no flow control). The host side (cpcd, zigbeed,
+# otbr-agent) should come from the same SiSDK release.
+name: SONOFF DONGLE-E Multiprotocol RCP
+device: EFR32MG21A020F768IM32
+base_project: src/multipan_rcp
+filename: "{manifest_name}_{sdk_version}_{baudrate}_{fw_variant}"
+sdk: "simplicity_sdk:2026.6.2"
+toolchain: "gcc:14.2.1"
+
+gbl:
+  fw_type: rcp-uart-802154
+  baudrate: 460800
+  fw_variant: no_flow
+
+c_defines:
+  SL_CPC_DRV_UART_VCOM_BAUDRATE: 460800
+  SL_CPC_DRV_UART_VCOM_FLOW_CONTROL_TYPE: usartHwFlowControlNone
+
+  SL_CPC_DRV_UART_VCOM_PERIPHERAL: USART0
+  SL_CPC_DRV_UART_VCOM_PERIPHERAL_NO: 0
+
+  SL_CPC_DRV_UART_VCOM_TX_PORT: SL_GPIO_PORT_B
+  SL_CPC_DRV_UART_VCOM_TX_PIN: 1
+
+  SL_CPC_DRV_UART_VCOM_RX_PORT: SL_GPIO_PORT_B
+  SL_CPC_DRV_UART_VCOM_RX_PIN: 0
+
+  SL_CPC_DRV_UART_VCOM_CTS_PORT: 0
+  SL_CPC_DRV_UART_VCOM_CTS_PIN: 0
+
+  SL_CPC_DRV_UART_VCOM_RTS_PORT: 0
+  SL_CPC_DRV_UART_VCOM_RTS_PIN: 0
+
+  # Same radio and CPC settings as Nerivec's v2024.6.2 manifest, so this build
+  # differs only in the SDK. CTUNE: Nerivec uses 128 (works); the SONOFF NCP reported 140;
+  # a factory MFG_CTUNE token, if present, wins either way.
+  SL_CPC_DRV_UART_VCOM_RX_QUEUE_SIZE: 10
+  SL_CPC_DRV_UART_VCOM_TX_QUEUE_SIZE: 10
+  SL_CPC_TX_QUEUE_ITEM_MAX_COUNT: 15
+  SL_CPC_RX_BUFFER_MAX_COUNT: 15
+
+  SL_CLOCK_MANAGER_HFXO_FREQ: 38400000
+  SL_CLOCK_MANAGER_HFXO_CTUNE: 128
+  SL_CLOCK_MANAGER_HFXO_PRECISION: 50
+  SL_CLOCK_MANAGER_LFXO_CTUNE: 63
+  SL_CLOCK_MANAGER_LFXO_PRECISION: 50
+
+  SL_RAIL_UTIL_RSSI_OFFSET: -11
+
+# OpenThread log output to the host stays off (the sample default), as in the tested build.
+
+# cpcd must run with disable_encryption: no CPC security component.
+add_components:
+  - id: cpc_security_secondary_none
